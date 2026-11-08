@@ -1,0 +1,55 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Florent « fls » Sautour, Campus Beaupeyrat
+#
+# net04/check : fait le point sur les 3 missions du TP « Le commutateur de la médiathèque ».
+#   ./check          toutes les missions        ./check 2    la mission 2 seulement
+#   ./check --reset  remet les missions a zero
+# A lancer sur la VM, dans le dossier de l'archive, pendant que lab1-switches tourne.
+# Les reponses sont verifiees par empreinte (sha256), jamais ecrites en clair. Ne modifie rien dans les labs.
+. "$(dirname "$(readlink -f "$0")")/lib/check.sh"
+start "la médiathèque · net04" 3 "$@"
+
+L=lab1-switches
+mac() { ex $L "$1" "cat /sys/class/net/eth0/address" | tr -d '[:space:]'; }
+pc_ok() { [ "$(mac pc$1)" = "02:00:00:00:00:0$1" ] && has_addr $L pc$1 192.168.10.$1/24; }
+in_br0() { [ "$(ex $L sw1 "ip -o link show master br0" | grep -cE ' eth[0-2][@:]')" = 3 ]; }
+arp_pc4() { ex $L pc1 "ip neigh show 192.168.10.4" | grep -q "lladdr 02:00:00:00:00:04"; }
+# fdb <commutateur> <mac> <port> : la table MAC du commutateur a appris cette MAC derriere ce port
+fdb() { ex $L "$1" "bridge fdb show br br0" | grep -v permanent | grep -qE "^$2 dev $3( |$)"; }
+
+if mission 1 "le câblage" && lab $L pc1; then
+  for i in 1 2 3 4; do
+    check "pc$i : MAC 02:00:00:00:00:0$i et IP 192.168.10.$i/24, comme sur le schéma" pc_ok $i
+    hint "ce TP s'observe, il ne se configure pas : relancez le lab (kathara lclean, puis kathara lstart --noterminals)"
+  done
+  check "sw1 : br0 relie eth0, eth1 et eth2" in_br0
+  ask m1-bridge "Nom du pont créé dans sw1" 0f1575ab177c63b4a9de71c81aaf76cd2680bc20fa9b0ba6444e14e5303803e8
+  hint "relisez sw1.startup : ip link add … type bridge"
+fi
+
+if mission 2 "l'apprentissage" && lab $L pc1; then
+  check "cache ARP de pc1 : pc4 connu" arp_pc4
+  hint "sur pc1 : ping -c 2 192.168.10.4, puis ip neigh (ou arp -n)"
+  check "table MAC de sw1 : pc4 derrière eth2" fdb sw1 02:00:00:00:00:04 eth2
+  hint "sw1 oublie une adresse au bout de 300 s : refaites le ping pc1 → pc4 juste avant ./check"
+  check "table MAC de sw2 : pc1 derrière eth0" fdb sw2 02:00:00:00:00:01 eth0
+  hint "sur sw2 : bridge fdb show br br0 | grep -v permanent (ou brctl showmacs br0)"
+  ask m2-port "Port (interface) de sw1 derrière lequel pc4 a été appris" 151b6d4757681616a33d53b6a5b14fa5acf5164e97f2826b8efe77f4d65f218d
+  hint "relisez la colonne dev de bridge fdb show (ou port no de brctl showmacs : 3 = eth2)"
+  ask m2-port2 "Port (interface) de sw2 derrière lequel pc1 a été appris" 9c32a8c7e59e7935b1e5d3eea04ed8e08c41c1d3da88b98a8ad15d38cfc55b00
+  hint "pc1 n'est pas branché sur sw2 : par quel câble ses trames arrivent-elles ?"
+fi
+
+if mission 3 "l'espion"; then
+  ask m3-dst "MAC de destination des trames ICMP que pc2 a vues passer pendant l'inondation" a63ab3c5038a8946c163dd6ea4a8ec1b7371f1464e482ec9d5f7e11faaa69d0c
+  hint "relisez la capture de pc2 avec -e : la MAC après le >"
+  ask m3-type "Valeur du type de la requête ARP, dans les octets" 7ba6de8b74a1751302131909116affb1ef205843f654190346be26ee8a9177da
+  hint "relisez la ligne 0x0000 : les 2 octets après les deux adresses"
+  ask m3-size "Plus grande taille -s qui passe avec ping -M do" e56ae9ee21661d3febabe8d1e03ee82d02466a5d405e89f2acf449cd6a6240b8
+  hint "essayez autour de 1 500 - 28"
+  ask m3-mtu "Taille du paquet IP de ce ping (données + ICMP + IP), en octets" 9f69998560dcfd8016442e0a32e959191df095817a164ce844c64ec5a8b0cc1b
+  hint "en-tête ICMP : 8 octets, en-tête IP : 20 octets"
+fi
+
+finish "Le commutateur de la médiathèque est expliqué : exit 0. Appelez le professeur pour valider !"

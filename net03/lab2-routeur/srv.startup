@@ -1,0 +1,10 @@
+# srv : serveur web 10.0.0.5/24, passerelle r1 (10.0.0.254)
+ifconfig eth0 10.0.0.5 netmask 255.255.255.0 up
+route add default gw 10.0.0.254
+# equivalent iproute2 :
+#   ip address add 10.0.0.5/24 dev eth0 ; ip link set eth0 up
+#   ip route add default via 10.0.0.254
+
+# page d'accueil et demarrage du serveur web Apache
+echo "<h1>Bonjour, ici srv (net03)</h1>" > /var/www/html/index.html
+service apache2 start

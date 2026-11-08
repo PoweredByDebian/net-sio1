@@ -1,0 +1,6 @@
+# fichiers produits en TP : ils restent sur la VM de l'etudiant
+.check-state
+.etat
+net01/mon-lab/
+shared/
+*.pcap

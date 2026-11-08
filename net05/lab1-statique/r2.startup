@@ -1,0 +1,6 @@
+# r2 : eth0 10.0.12.2/30 (lien vers r1), eth1 192.168.2.254/24 (reseau de pc2)
+# AUCUNE route statique : c'est le travail du TP.
+ifconfig eth0 10.0.12.2 netmask 255.255.255.252 up
+ifconfig eth1 192.168.2.254 netmask 255.255.255.0 up
+sysctl -w net.ipv4.ip_forward=1
+# equivalent iproute2 : ip address add 10.0.12.2/30 dev eth0 ; ip address add 192.168.2.254/24 dev eth1 ; ip link set eth0 up ; ip link set eth1 up

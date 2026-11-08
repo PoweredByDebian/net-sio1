@@ -1,0 +1,5 @@
+# adresse IP de pc2 (les adresses IP seront vues au cours net02)
+ifconfig eth0 10.0.0.2 netmask 255.255.255.0 up
+# equivalent iproute2 :
+#   ip address add 10.0.0.2/24 dev eth0
+#   ip link set eth0 up

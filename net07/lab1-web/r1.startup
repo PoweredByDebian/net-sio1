@@ -1,0 +1,5 @@
+# r1 : eth0 192.168.10.254/24 (reseau de pc1), eth1 10.0.0.254/24 (reseau de srv)
+ifconfig eth0 192.168.10.254 netmask 255.255.255.0 up
+ifconfig eth1 10.0.0.254 netmask 255.255.255.0 up
+sysctl -w net.ipv4.ip_forward=1
+# equivalent iproute2 : ip address add 192.168.10.254/24 dev eth0 ; ip address add 10.0.0.254/24 dev eth1 ; ip link set eth0 up ; ip link set eth1 up

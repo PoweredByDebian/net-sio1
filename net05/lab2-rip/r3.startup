@@ -1,0 +1,8 @@
+# r3 : eth0 192.168.3.254/24 (reseau local), eth1 10.0.23.2/30, eth2 10.0.13.2/30
+ifconfig eth0 192.168.3.254 netmask 255.255.255.0 up
+ifconfig eth1 10.0.23.2 netmask 255.255.255.252 up
+ifconfig eth2 10.0.13.2 netmask 255.255.255.252 up
+sysctl -w net.ipv4.ip_forward=1
+# demarrer FRR (configuration dans etc/frr/ de ce dossier : RIP version 2)
+systemctl start frr
+# si systemctl n'existe pas dans l'image : /etc/init.d/frr start

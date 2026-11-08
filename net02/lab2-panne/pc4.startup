@@ -1,0 +1,5 @@
+# pc4 : configuration fournie
+ifconfig eth0 192.168.20.10 netmask 255.255.255.0 up
+# equivalent iproute2 :
+#   ip address add 192.168.20.10/24 dev eth0
+#   ip link set eth0 up

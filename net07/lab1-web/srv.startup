@@ -1,0 +1,9 @@
+# srv : serveur web 10.0.0.80/24, passerelle r1 (10.0.0.254)
+ifconfig eth0 10.0.0.80 netmask 255.255.255.0 up
+route add default gw 10.0.0.254
+# equivalent iproute2 : ip address add 10.0.0.80/24 dev eth0 ; ip link set eth0 up ; ip route add default via 10.0.0.254
+
+# les pages sont copiees depuis le dossier srv/ du lab (var/www/html, etc/apache2/conf-enabled/net07.conf)
+# /prive/notes.html : lisible par root seulement -> Apache (www-data) ne peut pas la lire -> 403
+chmod 600 /var/www/html/prive/notes.html
+service apache2 start

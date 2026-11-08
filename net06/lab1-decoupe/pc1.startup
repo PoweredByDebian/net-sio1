@@ -1,0 +1,3 @@
+# Interface activee, SANS adresse : le calcul et la configuration sont le travail du TP.
+ip link set eth0 up
+# equivalent net-tools : ifconfig eth0 up

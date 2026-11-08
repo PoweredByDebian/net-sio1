@@ -1,0 +1,58 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Florent « fls » Sautour, Campus Beaupeyrat
+#
+# net05/check : fait le point sur les 3 missions du TP « Tracer la route ».
+#   ./check          toutes les missions        ./check 3    la mission 3 seulement
+#   ./check --reset  remet les missions a zero
+# A lancer sur la VM, dans le dossier de l'archive, pendant que le lab de la mission tourne.
+# Les reponses sont verifiees par empreinte (sha256), jamais ecrites en clair. Ne modifie rien dans les labs.
+. "$(dirname "$(readlink -f "$0")")/lib/check.sh"
+start "la carte des routes · net05" 3 "$@"
+
+S=lab1-statique; R=lab2-rip
+# has_route <lab> <routeur> <regex> : une ligne de ip route du routeur correspond
+has_route() { ex "$1" "$2" "ip route" | grep -qE "$3"; }
+forward() { [ "$(ex "$1" "$2" "cat /proc/sys/net/ipv4/ip_forward" | tr -d '[:space:]')" = 1 ]; }
+ripd() { ex $R r1 "pgrep -x ripd" | grep -q '[0-9]'; }
+# only_rip : r1 n'a aucune route statique vers les reseaux distants (tout vient de RIP)
+only_rip() { ! ex $R r1 "ip route" | grep -E '^192\.168\.[23]\.0/24' | grep -qv 'proto rip'; }
+
+if mission 1 "l'aller" && lab $S r1; then
+  check "r1 : route vers 192.168.2.0/24 via 10.0.12.2" has_route $S r1 '^192\.168\.2\.0/24 via 10\.0\.12\.2 '
+  hint "sur r1 : ip route add 192.168.2.0/24 via 10.0.12.2 (ou route add -net 192.168.2.0 netmask 255.255.255.0 gw 10.0.12.2)"
+  check "r1 route les paquets (ip_forward = 1)" forward $S r1
+  hint "sur r1 : sysctl -w net.ipv4.ip_forward=1"
+  ask m1-from "Adresse qui envoyait « Destination Net Unreachable » avant la route (après From)" c987e762b74a83036cddd777a780c0cb887bc05109894287262d3f9ae752585d
+  hint "relisez le message du premier essai : c'est la passerelle de pc1 qui répond"
+fi
+
+if mission 2 "le retour" && lab $S r2; then
+  check "r2 : route vers 192.168.1.0/24 via 10.0.12.1" has_route $S r2 '^192\.168\.1\.0/24 via 10\.0\.12\.1 '
+  hint "sur r2 : ip route add 192.168.1.0/24 via 10.0.12.1 (la réponse de pc2 doit revenir)"
+  check "r2 route les paquets (ip_forward = 1)" forward $S r2
+  hint "sur r2 : sysctl -w net.ipv4.ip_forward=1"
+  check "pc1 joint pc2" reach $S pc1 192.168.2.10
+  hint "les deux routes, l'aller sur r1 et le retour sur r2, sont-elles là ? (ip route sur chacun)"
+  ask m2-ttl "Valeur ttl= lue dans les réponses du ping, sur pc1" 81b8a03f97e8787c53fe1a86bda042b6f0de9b0ec9c09357e107c99ba4d6948a
+  hint "pc2 répond avec 64 ; comptez les routeurs traversés par la réponse"
+  ask m2-hops "Nombre de lignes affichées par traceroute -n 192.168.2.10 sur pc1" 4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce
+  hint "une ligne par routeur traversé, plus la destination"
+fi
+
+if mission 3 "RIP" && lab $R r1; then
+  check "FRR tourne sur r1 (ripd)" ripd
+  hint "relancez le lab : kathara lclean, puis kathara lstart --noterminals (attendez une minute)"
+  check "r1 a appris 192.168.2.0/24 par RIP" has_route $R r1 '^192\.168\.2\.0/24 .*proto rip'
+  hint "RIP envoie ses annonces toutes les 30 s : attendez, puis vtysh -c \"show ip route\""
+  check "r1 a appris 192.168.3.0/24 par RIP" has_route $R r1 '^192\.168\.3\.0/24 .*proto rip'
+  check "aucune route écrite à la main sur r1 vers ces réseaux" only_rip
+  hint "laissez RIP travailler : retirez vos routes statiques (ip route del …)"
+  check "pc1 joint pc2 et pc3 sans route écrite à la main" reach $R pc1 192.168.2.10 192.168.3.10
+  ask m3-metric "Métrique RIP de la route vers 192.168.3.0/24 sur r1 (2e nombre entre crochets)" d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35
+  hint "relisez [120/…] dans vtysh -c \"show ip route\""
+  ask m3-next "Prochain saut de r1 vers 192.168.3.0/24" e5935875fad0052bd3fd1664095c69699893b349ba8b7ba7766638843c7bc625
+  hint "dans vtysh -c \"show ip route\" : l'adresse après via (le schéma dit quel routeur c'est)"
+fi
+
+finish "La carte des routes est complète : exit 0. Appelez le professeur pour valider !"

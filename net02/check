@@ -1,0 +1,63 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Florent « fls » Sautour, Campus Beaupeyrat
+#
+# net02/check : fait le point sur les 4 missions du TP « L'agence de Limoges ».
+#   ./check          toutes les missions        ./check 2    la mission 2 seulement
+#   ./check --reset  remet les missions a zero
+# A lancer sur la VM, dans le dossier de l'archive, pendant que le lab de la mission tourne.
+# Les reponses sont verifiees par empreinte (sha256), jamais ecrites en clair. Ne modifie rien dans les labs.
+. "$(dirname "$(readlink -f "$0")")/lib/check.sh"
+start "agence de Limoges · net02" 4 "$@"
+
+# one <adresses> : les adresses lues sur une ligne, pour les conseils
+one() { [ -n "$1" ] && echo "$1" | tr '\n' ' ' || echo "aucune adresse "; }
+everyone() { reach lab2-panne pc1 192.168.20.20 192.168.20.30 192.168.20.40 && reach lab2-panne pc2 192.168.20.30 192.168.20.40 && reach lab2-panne pc3 192.168.20.40; }
+boots() { has_addr lab1-config pc4 192.168.10.4/24 && reach lab1-config pc1 192.168.10.4; }
+
+if mission 1 "mise en service" && lab lab1-config pc1; then
+  for i in 1 2 3 4; do
+    a="$(addr lab1-config pc$i)"
+    check "pc$i a l'adresse 192.168.10.$i/24, et elle seule" test "$a" = 192.168.10.$i/24
+    hint "pc$i a : $(one "$a")→ ip address add 192.168.10.$i/24 dev eth0 (ou ifconfig eth0 192.168.10.$i netmask 255.255.255.0 up) ; une adresse en trop : ip address del"
+  done
+  check "pc1 joint pc2, pc3 et pc4" reach lab1-config pc1 192.168.10.2 192.168.10.3 192.168.10.4
+  hint "eth0 doit être activée sur chaque poste : ip link set eth0 up"
+  ask m1-bcast "Adresse de diffusion du réseau 192.168.10.0/24" 0d20c675aecd73acda2c70551bcf02d8d153b5e8d185dd579a778b5a02566d2f
+  ask m1-hosts "Combien de machines peut-on placer dans 192.168.10.0/24" 9512d95d00d61bdec03d2b99d6ecc455ee5644ae52d10e7c4a61c93062dc97a3
+fi
+
+if mission 2 "la panne" && lab lab2-panne pc1; then
+  ask m2-out "Quel poste n'était pas dans le réseau 192.168.20.0/24" 499a30ecdcccbb1941327c159903ba16e9fa10d8d414789d59c8713f07fa93af
+  a="$(addr lab2-panne pc1)"; check "pc1 garde 192.168.20.10/24" test "$a" = 192.168.20.10/24
+  hint "pc1 a : $(one "$a")→ pc1 n'était pas en panne : remettez 192.168.20.10/24"
+  a="$(addr lab2-panne pc2)"; check "pc2 a le bon masque : 192.168.20.20/24" test "$a" = 192.168.20.20/24
+  hint "pc2 a : $(one "$a")→ ifconfig eth0 192.168.20.20 netmask 255.255.255.0 (avec ip : del de l'ancienne, puis add)"
+  a="$(addr lab2-panne pc3)"; check "pc3 est dans le réseau : 192.168.20.30/24" test "$a" = 192.168.20.30/24
+  hint "pc3 a : $(one "$a")→ avec ip address, retirez l'ancienne adresse (del) avant d'ajouter la nouvelle"
+  a="$(addr lab2-panne pc4)"; check "pc4 n'a plus l'adresse de pc1 : 192.168.20.40/24" test "$a" = 192.168.20.40/24
+  hint "pc4 a : $(one "$a")→ deux machines ne doivent jamais avoir la même adresse"
+  check "chaque poste joint les trois autres" everyone
+  hint "si les adresses sont justes : vérifiez sur chaque poste que eth0 est active (ip link set eth0 up)"
+fi
+
+if mission 3 "deux réseaux" && lab lab3-deux-reseaux pc1; then
+  check "pc1 joint pc2 (même réseau 192.168.1.0/24)" reach lab3-deux-reseaux pc1 192.168.1.2
+  hint "ne modifiez pas ce lab : relancez-le (kathara lclean, puis kathara lstart --noterminals)"
+  check "pc1 ne joint pas pc3 (réseau 192.168.2.0/24) : c'est normal" not reach lab3-deux-reseaux pc1 192.168.2.3
+  hint "ne modifiez pas ce lab : on constate qu'un commutateur ne suffit pas entre deux réseaux IP"
+  ask m3-device "Quel équipement faut-il ajouter pour que les deux réseaux communiquent" 4e9422e6a4b6f3967df1b01d4a9f9166e1a091b07426b43c071a8bcc33cee9d8
+fi
+
+if mission 4 "configuration permanente"; then
+  for i in 1 2 3 4; do
+    check "pc$i.startup donne 192.168.10.$i/24 à eth0" startup lab1-config pc$i "192\.168\.10\.$i(/24| +netmask +255\.255\.255\.0)"
+    hint "dans lab1-config/pc$i.startup : ip address add 192.168.10.$i/24 dev eth0, puis ip link set eth0 up"
+  done
+  if clean && lab lab1-config pc1; then
+    check "lab relancé avec vos .startup : pc1 joint pc4 sans rien taper" boots
+    hint "kathara lclean, puis kathara lstart --noterminals dans lab1-config : les .startup ne sont lus qu'au démarrage"
+  fi
+fi
+
+finish "Agence en service : exit 0. Appelez le professeur pour valider !"

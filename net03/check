@@ -1,0 +1,58 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Florent « fls » Sautour, Campus Beaupeyrat
+#
+# net03/check : fait le point sur les 4 preuves du TP « Les preuves par la capture ».
+#   ./check          toutes les preuves         ./check 4    la preuve 4 seulement
+#   ./check --reset  remet les preuves a zero
+# A lancer sur la VM, dans le dossier de l'archive, pendant que le lab de la preuve tourne ; regarde aussi
+# la capture enregistree dans lab1-lan/shared. Les reponses sont verifiees par empreinte (sha256), jamais
+# ecrites en clair. Ne modifie rien dans les labs.
+CHECK_WORD=preuve
+. "$(dirname "$(readlink -f "$0")")/lib/check.sh"
+start "les preuves par la capture · net03" 4 "$@"
+
+mac() { ex "$1" "$2" "cat /sys/class/net/${3:-eth0}/address" | grep -oE '([0-9a-f]{2}:){5}[0-9a-f]{2}' | head -1; }
+neigh() { ex "$1" "$2" "ip neigh show $3" | grep -q lladdr; }
+PCAP="$D/lab1-lan/shared/tcp.pcap"
+saved() { [ -s "$PCAP" ] && [ "$(stat -c %s "$PCAP")" -gt 24 ]; }
+web() { ex lab2-routeur pc1 "curl -s -m 3 http://10.0.0.5/" | grep -q "srv (net03)"; }
+arp_gw_only() { local n; n="$(ex lab2-routeur pc1 "ip neigh show")"; echo "$n" | grep -q "^192\.168\.10\.254 .*lladdr" && ! echo "$n" | grep -q "^10\.0\.0\.5 "; }
+
+if mission 1 "le ping" && lab lab1-lan pc1; then
+  check "pc1 joint pc2" reach lab1-lan pc1 192.168.10.2
+  hint "sur pc1 : ping -c 1 192.168.10.2, pendant que pc2 capture (tcpdump -e -n -i eth0)"
+  check "pc1 a appris la MAC de pc2 par ARP" neigh lab1-lan pc1 192.168.10.2
+  hint "le ping déclenche l'ARP : refaites-le, puis arp -n (ou ip neigh) sur pc1"
+  ask p1-arp "MAC de destination de la trame « ARP, Request »" 927ac519ac15daff25271b8c925e9376a4e5de537a86e9daeb27b4a397e6bb56
+  ask p1-ip "Taille de l'en-tête IP de la trame echo request, en octets" f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b
+  hint "98 = 14 (Ethernet) + IP + 64 (ICMP)"
+fi
+
+if mission 2 "TCP et UDP"; then
+  ask p2-tcp "Nombre de segments TCP échangés avant celui qui transporte bonjour" 4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce
+  hint "recomptez les drapeaux [S], [S.] et [.] avant le segment length 8"
+fi
+
+if mission 3 "Wireshark"; then
+  check "capture enregistrée dans lab1-lan/shared/tcp.pcap" saved
+  hint "sur pc1 : tcpdump -n -i eth0 -w /shared/tcp.pcap port 5000, pendant l'échange nc (Ctrl+C à la fin)"
+  check "la capture contient le segment « bonjour »" grep -aq bonjour "$PCAP"
+  hint "la capture doit tourner pendant l'envoi de bonjour avec nc"
+  ask p3-type "Valeur du champ Type de l'en-tête Ethernet" 0cf4b3fbdcb84810dfb47fa2f6e8b28ce2c852130b2d2795b5e4daf061a44244
+  hint "dépliez la ligne Ethernet II dans Wireshark"
+fi
+
+if mission 4 "le routeur" && lab lab2-routeur pc1; then
+  check "pc1 obtient la page de srv à travers r1" web
+  hint "sur pc1 : curl http://10.0.0.5/ (si rien ne vient : relancez le lab)"
+  check "table ARP de pc1 : r1 (192.168.10.254) oui, srv non" arp_gw_only
+  hint "refaites le curl, puis arp -n sur pc1 : pc1 ne parle qu'à sa passerelle"
+  ask_is p4-mac "MAC de destination de la requête, vue sur eth0 de r1 (côté pc1)" "$(mac lab2-routeur r1 eth0)"
+  hint "côté pc1, la trame est adressée à la passerelle"
+  ask_is p4-src "MAC source de la même requête, vue sur eth1 de r1 (côté srv)" "$(mac lab2-routeur r1 eth1)"
+  hint "relisez la capture faite sur eth1 de r1 (tcpdump -e) : qui a réécrit l'en-tête Ethernet ?"
+  ask p4-ip "IP de destination de la requête, vue sur eth1 de r1 (côté srv)" 0546412d61ba57f140cbc562c81ed83fb1b8aae26b57bb1ac00d5eddc798ac0f
+fi
+
+finish "Rapport complet : exit 0. Appelez le professeur pour valider !"

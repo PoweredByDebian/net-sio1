@@ -1,0 +1,6 @@
+# Routeur : interfaces activees, routage active, SANS adresse ni route : c'est le travail du TP.
+ip link set eth0 up
+ip link set eth1 up
+ip link set eth2 up
+sysctl -w net.ipv4.ip_forward=1
+# equivalent net-tools : ifconfig eth0 up ; ifconfig eth1 up ; ifconfig eth2 up

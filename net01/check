@@ -1,0 +1,82 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Florent « fls » Sautour, Campus Beaupeyrat
+#
+# net01/check : fait le point sur les 4 missions du TP « Recette de la salle B12 ».
+#   ./check          toutes les missions        ./check 3    la mission 3 seulement
+#   ./check --reset  remet les missions a zero
+# A lancer sur la VM, dans le dossier de l'archive, pendant que le lab de la mission tourne.
+# Les reponses sont verifiees par empreinte (sha256), jamais ecrites en clair. Ne modifie rien dans les labs.
+. "$(dirname "$(readlink -f "$0")")/lib/check.sh"
+start "recette de la salle B12 · net01" 4 "$@"
+
+mac() { ex "$1" "$2" "cat /sys/class/net/${3:-eth0}/address" | grep -oE '([0-9a-f]{2}:){5}[0-9a-f]{2}' | head -1; }
+ageing() { ex "$1" sw "cat /sys/class/net/br0/bridge/ageing_time" | grep -oE '^[0-9]+$'; }
+switching() { local a; a="$(ageing "$1")"; [ -n "$a" ] && [ "$a" != 0 ]; }
+# learnt <lab> <poste> <port> : la table MAC de sw a appris la MAC du poste derriere ce port
+learnt() { local m; m="$(mac "$1" "$2")"; [ -n "$m" ] && ex "$1" sw "bridge fdb show br br0" | grep -v permanent | grep -qiE "^$m dev $3( |$)"; }
+
+both_addr() { has_addr lab0-cable pc1 10.0.0.1/24 && has_addr lab0-cable pc2 10.0.0.2/24; }
+knows_pc2() { [ -n "$1" ] && ex lab0-cable pc1 "ip neigh show 10.0.0.2" | grep -qi "$1"; }
+# wiring <lab.conf> : pc1 a pc4 sur quatre cables differents, chacun relie a une interface de sw
+wiring() {
+  local i c seen=" "
+  for i in 1 2 3 4; do
+    c="$(grep -oE "^pc$i\[0\]=\"?[A-Za-z0-9]+" "$1" | cut -d= -f2 | tr -d '"')"
+    [ -n "$c" ] && grep -qE "^sw\[[0-9]+\]=\"?$c\"?[[:space:]]*$" "$1" && [[ "$seen" != *" $c "* ]] || return 1
+    seen="$seen$c "
+  done
+}
+pc_startups() { local i; for i in 1 2 3 4; do startup mon-lab pc$i "10\.0\.0\.$i( |/|$)" || return 1; done; }
+sw_startup() { startup mon-lab sw 'add +br0|addbr +br0' && ! startup mon-lab sw 'ageing_time +0( |$)|setageing +br0 +0( |$)'; }
+four_up() { local i; for i in 1 2 3 4; do has_addr mon-lab pc$i 10.0.0.$i/24 || return 1; done; }
+in_br0() { [ "$(ex mon-lab sw "ip -o link show master br0" | grep -cE ' eth[0-3][@:]')" = 4 ]; }
+
+if mission 1 "le câble" && lab lab0-cable pc1; then
+  check "pc1 et pc2 ont leur adresse (10.0.0.1 et 10.0.0.2)" both_addr
+  hint "les .startup donnent les adresses : relancez le lab (kathara lclean, puis kathara lstart --noterminals)"
+  check "pc1 joint pc2" reach lab0-cable pc1 10.0.0.2
+  M2="$(mac lab0-cable pc2)"
+  check "pc1 a appris la MAC de pc2 (table des voisins)" knows_pc2 "$M2"
+  hint "sur pc1 : ping -c 3 10.0.0.2, puis arp -n (ou ip neigh)"
+  ask_is m1-mac "Adresse MAC de eth0 sur pc2" "$M2"
+fi
+
+if mission 2 "le mouchard" && lab lab1-hub-switch pc3; then
+  check "pc1 joint pc2" reach lab1-hub-switch pc1 10.0.0.2
+  hint "sur pc1 : ping -c 3 10.0.0.2, pendant que pc3 écoute (tcpdump -n -e -i eth0)"
+  ask_is m2-dst "MAC de destination d'un « echo request » capturé sur pc3" "$(mac lab1-hub-switch pc2)"
+  ask m2-arp "MAC de destination de la question envoyée à tout le monde (ARP)" 927ac519ac15daff25271b8c925e9376a4e5de537a86e9daeb27b4a397e6bb56
+fi
+
+if mission 3 "le commutateur" && lab lab1-hub-switch sw; then
+  check "sw retient les adresses MAC (ageing_time différent de 0)" switching lab1-hub-switch
+  hint "sur sw : ip link set br0 type bridge ageing_time 30000 (ou brctl setageing br0 300)"
+  check "table MAC de sw : pc1 derrière eth0" learnt lab1-hub-switch pc1 eth0
+  hint "sur pc1 : ping -c 3 10.0.0.2 (sw oublie une adresse au bout de 300 s : refaites-le)"
+  check "table MAC de sw : pc2 derrière eth1" learnt lab1-hub-switch pc2 eth1
+  check "table MAC de sw : pc3 derrière eth2" learnt lab1-hub-switch pc3 eth2
+  hint "sur pc3 : ping -c 1 10.0.0.1, puis réaffichez la table"
+fi
+
+if mission 4 "mon lab"; then
+  C="$D/mon-lab/lab.conf"
+  check "mon-lab/lab.conf existe" test -f "$C"
+  hint "créez le dossier mon-lab à côté des autres labs (dans le dossier de l'archive)"
+  check "lab.conf : pc1 à pc4 chacun sur son câble, tous branchés à sw" wiring "$C"
+  hint "un câble par poste (A, B, C, D) ; sw a une interface sur chacun : sw[0]=\"A\" … sw[3]=\"D\""
+  check "pc1.startup à pc4.startup donnent 10.0.0.1 à 10.0.0.4" pc_startups
+  hint "inspirez-vous des .startup de lab1-hub-switch"
+  check "sw.startup crée un pont br0, sans ageing_time 0" sw_startup
+  hint "copiez sw.startup de lab1-hub-switch, ajoutez eth3, et retirez la ligne ageing_time 0"
+  if lab mon-lab pc1; then
+    check "les 4 postes ont démarré avec leur adresse" four_up
+    hint "relancez le lab après chaque modification des fichiers : kathara lclean, puis kathara lstart --noterminals"
+    check "sw relie ses 4 interfaces dans br0" in_br0
+    hint "dans sw.startup : ip link set eth0 master br0 … jusqu'à eth3"
+    check "sw est un commutateur (ageing_time différent de 0)" switching mon-lab
+    check "pc1 joint pc4" reach mon-lab pc1 10.0.0.4
+  fi
+fi
+
+finish "Salle B12 recettée : exit 0. Appelez le professeur pour valider !"

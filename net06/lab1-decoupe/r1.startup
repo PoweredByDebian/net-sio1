@@ -1,0 +1,10 @@
+# r1 : passerelle des trois premiers sous-reseaux /26 de 192.168.10.0/24 (derniere adresse utilisable)
+#   eth0 192.168.10.62/26  (sous-reseau 192.168.10.0/26,   pc1)
+#   eth1 192.168.10.126/26 (sous-reseau 192.168.10.64/26,  pc2)
+#   eth2 192.168.10.190/26 (sous-reseau 192.168.10.128/26, pc3)
+ifconfig eth0 192.168.10.62 netmask 255.255.255.192 up
+ifconfig eth1 192.168.10.126 netmask 255.255.255.192 up
+ifconfig eth2 192.168.10.190 netmask 255.255.255.192 up
+sysctl -w net.ipv4.ip_forward=1
+# equivalent iproute2 : ip address add 192.168.10.62/26 dev eth0 ; ip address add 192.168.10.126/26 dev eth1 ;
+#                       ip address add 192.168.10.190/26 dev eth2 ; ip link set eth0 up ; ip link set eth1 up ; ip link set eth2 up
